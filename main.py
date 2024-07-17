@@ -17,5 +17,9 @@ if __name__ == '__main__':
 
     crawler = GitHubCrawler(keywords, search_type.value)
     results = crawler.search()
-
+    
     print(json.dumps(results, indent=2, ensure_ascii=False))
+    
+    repo_result = crawler.parse_repo(results)
+    
+    print(json.dumps(repo_result, indent=4, ensure_ascii=False))
