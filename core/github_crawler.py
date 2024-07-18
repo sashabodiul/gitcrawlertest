@@ -1,28 +1,41 @@
 # core/github_crawler.py
 
-from typing import Dict
+from typing import Dict, List, Union
 from enum import Enum
 from bs4 import BeautifulSoup
 from core.gitrequests import GithubRequest
 from core.proxies import ProxyManager
 from utils.decorators import timing_decorator
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from requests import RequestException
+from requests import Response, RequestException
 
 class SearchType(Enum):
-    REPOSITORIES = "Repositories"
-    ISSUES = "Issues"
-    WIKIS = "Wikis"
+    REPOSITORIES: str = "Repositories"
+    ISSUES: str = "Issues"
+    WIKIS: str = "Wikis"
 
 class GitHubCrawler:
-    def __init__(self, keywords, search_type):
+    def __init__(self, keywords: List[str], search_type: SearchType):
+        """
+        Initialize GitHubCrawler instance.
+
+        Args:
+        - keywords (List[str]): List of keywords to search on GitHub.
+        - search_type (SearchType): Type of search (Repositories, Issues, or Wikis).
+        """
         self.keywords = keywords
         self.search_type = search_type
         self.github_request = GithubRequest()
         self.proxy_manager = ProxyManager()
 
     @timing_decorator
-    def search(self):
+    def search(self) -> List[Dict[str, str]]:
+        """
+        Perform GitHub search based on keywords and search type.
+
+        Returns:
+        - List of dictionaries containing URLs found in search results.
+        """
         results = []
         for keyword in self.keywords:
             url = f'https://github.com/search?q={keyword}&type={self.search_type}'
@@ -39,8 +52,17 @@ class GitHubCrawler:
                         })
                 return results
 
-    def _search_keyword(self, keyword: str):
-        url = f'{self.BASE_URL}?q={keyword}&type={self.search_type}'
+    def _search_keyword(self, keyword: str) -> List[Dict[str, str]]:
+        """
+        Perform a search for a specific keyword using GitHub search API.
+
+        Args:
+        - keyword (str): Keyword to search on GitHub.
+
+        Returns:
+        - List of dictionaries containing parsed results from the search.
+        """
+        url = f'https://github.com/search?q={keyword}&type={self.search_type.value}'
         proxy = self.proxy_manager.get_random_proxy()
         GithubRequest.set_proxies({'http': proxy, 'https': proxy})
         response = GithubRequest.get(url)
@@ -51,10 +73,19 @@ class GitHubCrawler:
             return []
 
     @timing_decorator
-    def parse_repo(self, urls):
+    def parse_repo(self, urls: List[Dict[str, str]]) -> List[Dict[str, Union[str, Dict[str, Union[float, int]]]]]:
+        """
+        Parse repositories from a list of URLs concurrently.
+
+        Args:
+        - urls (List[Dict[str, str]]): List of dictionaries containing URLs to parse.
+
+        Returns:
+        - List of dictionaries containing parsed repository information.
+        """
         results = []
         
-        with ThreadPoolExecutor(max_workers=5) as executor:  # Задайте количество потоков по вашему выбору
+        with ThreadPoolExecutor(max_workers=5) as executor:  # Set the number of threads as per your choice
             futures = []
             for url_info in urls:
                 url = url_info['url']
@@ -70,7 +101,16 @@ class GitHubCrawler:
 
         return results
 
-    def process_url(self, url):
+    def process_url(self, url: str) -> Union[Dict[str, Union[str, Dict[str, Union[float, int]]]], None]:
+        """
+        Process a single GitHub repository URL to extract owner and language statistics.
+
+        Args:
+        - url (str): URL of the GitHub repository.
+
+        Returns:
+        - Dictionary containing URL, owner, and language statistics if successful, otherwise None.
+        """
         try:
             response = self.github_request.get(url)
             if response.status_code == 200:
@@ -91,7 +131,16 @@ class GitHubCrawler:
         return None
     
     @timing_decorator
-    def _parse_results(self, html):
+    def _parse_results(self, html: str) -> List[Dict[str, str]]:
+        """
+        Parse HTML content to extract GitHub repository URLs.
+
+        Args:
+        - html (str): HTML content of the GitHub search results page.
+
+        Returns:
+        - List of dictionaries containing parsed repository URLs.
+        """
         results = []
         soup = BeautifulSoup(html, 'html.parser')
         divs = soup.find_all('div', class_='search-title')
@@ -103,7 +152,16 @@ class GitHubCrawler:
                 })
         return results
     
-    def get_language_stats(self, html) -> Dict:
+    def get_language_stats(self, html: str) -> Dict[str, Union[float, int]]:
+        """
+        Extract language statistics from the HTML content of a GitHub repository page.
+
+        Args:
+        - html (str): HTML content of the GitHub repository page.
+
+        Returns:
+        - Dictionary mapping programming languages to their percentage usage in the repository.
+        """
         soup = BeautifulSoup(html, 'html.parser')
         langs = soup.select("div.Layout-sidebar ul.list-style-none li.d-inline a.Link--secondary")
         values = []
@@ -111,7 +169,16 @@ class GitHubCrawler:
             values.append([span.text.strip() for span in lang.select("span")])
         return dict(values)
     
-    def get_owner(self, html):
+    def get_owner(self, html: str) -> str:
+        """
+        Extract the owner username from the HTML content of a GitHub repository page.
+
+        Args:
+        - html (str): HTML content of the GitHub repository page.
+
+        Returns:
+        - Owner username of the GitHub repository.
+        """
         soup = BeautifulSoup(html, 'html.parser')
         span = soup.select_one("span.author a")
         if span and span.text:
